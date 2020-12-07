@@ -1,0 +1,72 @@
+* This script is in written in Halcon 19.11
+
+PADDING := 10
+
+if (true) // Choose camera
+    open_framegrabber ('DirectShow', 1, 1, 0, 0, 0, 0, 'default', 8, 'rgb', -1, 'false', 'default', '[1] DFK 72BUC02', 0, -1, AcqHandle)
+else
+    open_framegrabber ('DirectShow', 1, 1, 0, 0, 0, 0, 'default', 8, 'rgb', -1, 'false', 'default', '[0] See3CAM_CU30', 0, -1, AcqHandle)
+endif
+
+grab_image_start (AcqHandle, -1)
+
+grab_image_async (Image, AcqHandle, -1)
+get_image_size(Image, width, height)
+
+* Generate an Image with all values Zero
+gen_image_const(Img_Zero, 'byte', width, height)
+
+
+firstTime := true
+dev_set_draw ('margin')
+dev_set_color ('red')
+
+dev_update_off()
+while (true)
+    grab_image_async (Image, AcqHandle, -1)
+    * Image Acquisition 01: Do something
+    rgb1_to_gray(Image, ImageGray)
+    
+    if (firstTime)
+        oldImage := ImageGray
+        firstTime := false
+        
+    else 
+        * Acquire new image
+        newImage := ImageGray
+        
+        * Perform Image differencing, followed by blob analysis
+        abs_diff_image(newImage, oldImage, imageDiff, 1)
+        threshold(imageDiff, changedReg, 10, 255)
+        
+        erosion_circle(changedReg, RegionErosion, 3.5)
+        connection(RegionErosion, ConnectedRegions)
+        select_shape(ConnectedRegions,selectedRegions, 'area','and', 5, 99999999999)
+        dilation_circle(selectedRegions, RegionDilation, 3.5)
+        union1(RegionDilation, selectedRegionsUnion)
+        connection(selectedRegionsUnion, finalRegions)
+        
+        smallest_rectangle1(finalRegions, Row1, Column1, Row2, Column2)
+        count_obj(finalRegions, n)
+        
+
+        dev_clear_window()
+        dev_display(Image)
+*       dev_display(imageDiff)
+        for I:=0 to (n-1) by 1
+            gen_rectangle1(rect, Row1[I]-PADDING, Column1[I]-PADDING, Row2[I]+PADDING, Column2[I]+PADDING)
+            dev_display(rect)
+        endfor
+        
+                
+        * Sort of IIR filter for Old Image so small constant movements (e.g, Leaves moving) can be ignored
+        add_image(newImage, Img_Zero, Img_C1, 0.25, 0)
+        add_image(oldImage, Img_Zero, Img_C2, 0.75, 0)
+        add_image(Img_C1, Img_C2, oldImage, 1, 0)
+        *oldImage := ImageGray
+        
+    endif    
+endwhile
+
+dev_update_on()
+close_framegrabber (AcqHandle)
